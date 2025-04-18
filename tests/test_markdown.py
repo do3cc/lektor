@@ -4,6 +4,7 @@ from typing import Union
 
 import pytest
 from markupsafe import Markup
+from mistune.plugins import plugin_url
 
 import lektor.markdown
 from lektor.context import Context
@@ -12,7 +13,6 @@ from lektor.markdown import get_controller
 from lektor.markdown import make_markdown
 from lektor.markdown import Markdown
 from lektor.markdown import markdown_to_html
-from lektor.markdown import MISTUNE_VERSION
 from lektor.markdown.controller import get_renderer_context
 from lektor.markdown.controller import RendererContext
 from lektor.markdown.controller import RendererHelper
@@ -156,12 +156,8 @@ def test_markdown_controller_parser_caching(markdown_controller):
     assert len(parsers) == 1
 
     _run_in_thread(get_parser)
-    if MISTUNE_VERSION.startswith("2."):
-        # mistune 2.x's parser is thread-safe. It need not be thread-local.
-        assert len(parsers) == 1
-    else:
-        # mistune 0.x's parser is not thread-safe. We need one for each thread.
-        assert len(parsers) == 2
+    # mistune 2.x's parser is thread-safe. It need not be thread-local.
+    assert len(parsers) == 1
 
 
 @pytest.mark.parametrize("base_url", ["/BASE/"])
@@ -179,17 +175,10 @@ def test_controller_cache(env):
     assert get_controller(env) is controller
 
 
-if MISTUNE_VERSION.startswith("0."):
-    plugin_url = ...
-else:
-    from mistune.plugins import plugin_url
-
-
 def plugin_null(md):
     return md
 
 
-@pytest.mark.skipif(MISTUNE_VERSION.startswith("0."), reason="mistune0")
 @pytest.mark.parametrize(
     "plugin, resolved",
     [
@@ -202,14 +191,12 @@ def test_markdown_controller_resolve_plugin(plugin, resolved, markdown_controlle
     assert markdown_controller.resolve_plugin(plugin) is resolved
 
 
-@pytest.mark.skipif(MISTUNE_VERSION.startswith("0."), reason="mistune0")
 @pytest.mark.parametrize("plugin", ["badplugin", "unknown_module:badplugin"])
 def test_markdown_controller_resolve_plugin_unknown(plugin, markdown_controller):
     with pytest.raises(UnknownPluginError):
         markdown_controller.resolve_plugin(plugin)
 
 
-@pytest.mark.skipif(MISTUNE_VERSION.startswith("0."), reason="mistune0")
 def test_markdown_controller_resolve_plugin_raises_typeerror(markdown_controller):
     with pytest.raises(TypeError):
         markdown_controller.resolve_plugin(None)
@@ -218,19 +205,15 @@ def test_markdown_controller_resolve_plugin_raises_typeerror(markdown_controller
 @pytest.fixture
 def improved_renderer():
     # pylint: disable=import-outside-toplevel
-    if MISTUNE_VERSION.startswith("2."):
-        from lektor.markdown.mistune2 import ImprovedRenderer
-    else:
-        from lektor.markdown.mistune0 import ImprovedRenderer
+    from lektor.markdown.mistune2 import ImprovedRenderer
+
     return ImprovedRenderer()
 
 
 @pytest.mark.parametrize(
     "link, title, text, expected",
     [
-        # NB: Mistune 0.x and mistune 2.x behave differently with
-        # respect to how much HTML escaping of the ``link`` the
-        # renderer is expected to do.  Do not put HTML-escaping tests
+        # Do not put HTML-escaping tests
         # here.  Put them in the ``test_integration`` test later in
         # this file.
         ("a", None, "text", r'<a href="a/">text</a>\Z'),
@@ -242,19 +225,14 @@ def improved_renderer():
 )
 @pytest.mark.usefixtures("renderer_context")
 def test_ImprovedRenderer_link(link, title, text, expected, improved_renderer):
-    if MISTUNE_VERSION.startswith("2."):
-        result = improved_renderer.link(link, text, title)
-    else:
-        result = improved_renderer.link(link, title, text)
+    result = improved_renderer.link(link, text, title)
     assert re.match(expected, result)
 
 
 @pytest.mark.parametrize(
     "src, title, alt, expected",
     [
-        # NB: Mistune 0.x and mistune 2.x behave differently with
-        # respect to how much HTML escaping of the ``src`` the
-        # renderer is expected to do.  Do not put HTML-escaping tests
+        # Do not put HTML-escaping tests
         # here.  Put them in the ``test_integration`` test later in
         # this file.
         ("/test.jpg", None, "text", r'<img src="../test.jpg" alt="text"\s*/?>\Z'),
@@ -266,10 +244,7 @@ def test_ImprovedRenderer_link(link, title, text, expected, improved_renderer):
 )
 @pytest.mark.usefixtures("renderer_context")
 def test_ImprovedRenderer_image(src, title, alt, expected, improved_renderer):
-    if MISTUNE_VERSION.startswith("2."):
-        result = improved_renderer.image(src, alt, title)
-    else:
-        result = improved_renderer.image(src, title, alt)
+    result = improved_renderer.image(src, alt, title)
     assert re.match(expected, result.rstrip())
 
 
@@ -305,8 +280,6 @@ class LinkCounterPlugin(Plugin):
 
     @staticmethod
     def on_markdown_lexer_config(config, renderer, **kwargs):
-        if not hasattr(config, "parser_options"):
-            return  # mistune 0
         # Configure a plugin just to make sure we can
         config.parser_options.setdefault("plugins", []).append(plugin_linkcount)
 
@@ -379,7 +352,6 @@ class TestMarkdown:
 
     @pytest.mark.parametrize("source", ["[x](/y) [link-count]"])
     @pytest.mark.usefixtures("context", "link_counter_plugin")
-    @pytest.mark.skipif(MISTUNE_VERSION.startswith("0."), reason="mistune0")
     def test_linkcount_plugin(self, markdown):
         assert markdown["nlinks"] == 1
         assert re.search(r"<code>1</code>", markdown.html)
@@ -439,8 +411,6 @@ def _normalize_html(output: Union[str, Markup]) -> str:
         # Autolink
         ("autolink: <http://example.org>", r'.*<a href="http://example\.org"'),
         #################
-        # Extra features enabled by default in mistune 0.8.4, but which require
-        # plugins to be enabled in mistune 2
         ("strikethrough: ~~stricken~~ foo", r".*<del>stricken</del> foo"),
         (
             "footnotes[^note]\n\n[^note]: comment",
@@ -478,35 +448,6 @@ def test_deprecated_ImprovedRenderer(improved_renderer):
         from lektor.markdown import ImprovedRenderer
     assert all(w.filename == __file__ for w in warnings)
     assert ImprovedRenderer is type(improved_renderer)
-
-
-@pytest.mark.skipif(not MISTUNE_VERSION.startswith("0."), reason="not mistune0")
-@pytest.mark.usefixtures("renderer_context")
-def test_deprecated_ImprovedRenderer_record(record):
-    with pytest.deprecated_call():
-        # pylint: disable-next=import-outside-toplevel,no-name-in-module
-        from lektor.markdown import ImprovedRenderer
-    improved_renderer = ImprovedRenderer()
-
-    with pytest.deprecated_call(
-        match=r"Use .*Renderer\.lektor\.record instead"
-    ) as warnings:
-        assert improved_renderer.record is record
-    assert all(w.filename == __file__ for w in warnings)
-
-
-@pytest.mark.skipif(not MISTUNE_VERSION.startswith("0."), reason="not mistune0")
-def test_deprecated_ImprovedRenderer_meta(renderer_context):
-    with pytest.deprecated_call():
-        # pylint: disable-next=import-outside-toplevel,no-name-in-module
-        from lektor.markdown import ImprovedRenderer
-    improved_renderer = ImprovedRenderer()
-
-    with pytest.deprecated_call(
-        match=r"Use .*Renderer\.lektor\.meta instead"
-    ) as warnings:
-        assert improved_renderer.meta is renderer_context.meta
-    assert all(w.filename == __file__ for w in warnings)
 
 
 def test_deprecated_MarkdownConfig(improved_renderer):
@@ -558,49 +499,3 @@ def test_deprecated_markdown_to_html(record, field_options):
         result = markdown_to_html("goober", record, field_options)
     assert all(w.filename == __file__ for w in warnings)
     assert result.html.rstrip() == "<p>goober</p>"
-
-
-@pytest.mark.skipif(
-    not MISTUNE_VERSION.startswith("0."),
-    reason="Legacy renderer mixins will only work with mistune 0.x",
-)
-@pytest.mark.usefixtures("context")
-def test_legacy_plugin(env, record, field_options):
-    # Test that Lektor<3.4 style plugin works
-
-    class LegacyPlugin(Plugin):
-        """A legacy, Lektor<3.4, mistune 0.x style plugin."""
-
-        name = "legacy-plugin"
-
-        def on_markdown_config(self, config, **extra):
-            # pylint: disable-next=import-outside-toplevel,no-name-in-module
-            from lektor.markdown import escape
-
-            class LegacyRendererMixin:
-                def link(self, link, title, text):
-                    self.meta["links"].append(link)
-                    self.meta["record"] = self.record
-                    return f'<a href="{escape(link)}">{text}</a>'
-
-            config.renderer_mixins.append(LegacyRendererMixin)
-
-        @staticmethod
-        def on_markdown_meta_init(meta, **extra):
-            meta["links"] = []
-
-        @staticmethod
-        def on_markdown_meta_postprocess(meta, **extra):
-            meta["nlinks"] = len(meta["links"])
-
-    env.plugin_controller.instanciate_plugin("legacy-plugin", LegacyPlugin)
-
-    source = "[`foo`](https://example.org/)"
-    markdown = Markdown(source, record, field_options)
-
-    with pytest.deprecated_call():
-        assert markdown["record"] is record
-    assert markdown["links"] == ["https://example.org/"]
-    assert markdown["nlinks"] == 1
-    html = markdown.__html__().rstrip()
-    assert html == '<p><a href="https://example.org/"><code>foo</code></a></p>'
