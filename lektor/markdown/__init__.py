@@ -5,6 +5,7 @@ from importlib import metadata
 from typing import Any
 from typing import Optional
 from typing import TYPE_CHECKING
+from typing import Union
 from weakref import ref as weakref
 
 from markupsafe import Markup
@@ -51,7 +52,7 @@ class Markdown:
     __nonzero__ = __bool__
 
     @property
-    def record(self) -> SourceObject:
+    def record(self) -> Union[SourceObject, None]:
         ref = self.__record
         if ref is None:
             return None
