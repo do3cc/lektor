@@ -5,6 +5,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from dataclasses import field
 from functools import wraps
+from typing import Annotated
 from typing import Any
 from typing import Callable
 from typing import cast
@@ -72,15 +73,15 @@ def _is_valid_alt(value: str) -> bool:
 
 
 # Mark types for special validation
-_PathType = mdcls.NewType("_PathType", str, validate=_is_valid_path)
-_AltType = mdcls.NewType("_AltType", str, validate=_is_valid_alt)
-_BoolType = mdcls.NewType("_BoolType", bool, truthy={1, "1"}, falsy={0, "0"})
+_PathType = Annotated[str, marshmallow.fields.String(validate=_is_valid_path)]
+_AltType = Annotated[str, marshmallow.fields.String(validate=_is_valid_alt)]
+_BoolType = Annotated[bool, marshmallow.fields.Boolean(truthy={1, "1"}, falsy={0, "0"})]
 
 
 class _SchemaBase(marshmallow.Schema):
     TYPE_MAPPING = {ServerInfo: _ServerInfoField}
 
-    class Meta:
+    class Meta(marshmallow.Schema.Meta):
         unknown = marshmallow.EXCLUDE
 
 
